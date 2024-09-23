@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lobby List</title>
+    <style>
+            body { 
+        font-family: 'MyCustomFont', Arial, sans-serif; 
+    }
+    table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+    th, td { padding: 10px; border: 1px solid #ddd; }
+    th { background-color: #f2f2f2; }
+    .users { margin: 10px 0; }
+		@font-face {
+    font-family: 'MyCustomFont';
+    src: url('bzone.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+}
+
+    </style>
+</head>
+<body>
+    <h1>Allowed Multiplayer Mod File Types</h1>
+    <ul id="whitelist-file-types"></ul>
+
+    <h1>Current Games</h1>
+    <table>
+        <thead>
+            <tr>
+                <th>Game Name</th>
+                <th>User Count</th>
+                <th>Member Limit</th>
+                <th>Owner</th>
+                <th>Is Private</th>
+                <th>Created Time</th>
+                <th>Game Info</th>
+                <th>Users</th>
+            </tr>
+        </thead>
+        <tbody id="game-table-body"></tbody>
+    </table>
+
+    <h1>Current Lobbies</h1>
+    <table>
+        <thead>
+            <tr>
+                <th>Lobby Name</th>
+                <th>User Count</th>
+                <th>Member Limit</th>
+                <th>Owner</th>
+                <th>Is Private</th>
+                <th>Is Chat</th>
+                <th>Created Time</th>
+                <th>Users</th>
+            </tr>
+        </thead>
+        <tbody id="lobby-table-body"></tbody>
+    </table>
+
+    <script>
+        const uri = "ws://battlezone98mp.webdev.rebellion.co.uk:1337/";
+        const whitelistFileTypes = document.getElementById("whitelist-file-types");
+        const gameTableBody = document.getElementById("game-table-body");
+        const lobbyTableBody = document.getElementById("lobby-table-body");
+        let whitelistData = null;
+        let lobbyData = null;
+
+        // Function to parse game settings
+        function parseGameSettings(settings) {
+            const parts = settings.split('*');
+            return {
+                mapFile: parts[1],
+                crc32: parts[2],
+                mod: parts[3],
+                attributes: {
+                    lives: parts[8],
+                    satellite: Boolean(Number(parts[4])),
+                    barracks: Boolean(Number(parts[5])),
+                    sniper: Boolean(Number(parts[6])),
+                    splinter: Boolean(Number(parts[7])),
+                },
+            };
+        }
+
+        async function updateHTML() {
+            // Update allowed multiplayer mod file types
+            whitelistFileTypes.innerHTML = "";
+            if (whitelistData && whitelistData.data && whitelistData.data.whitelist) {
+                whitelistData.data.whitelist.list.forEach(fileType => {
+                    const li = document.createElement("li");
+                    li.textContent = fileType;
+                    whitelistFileTypes.appendChild(li);
+                });
+            } else {
+                whitelistFileTypes.innerHTML = '<li>No file types available.</li>';
+            }
+
+            // Update current games and lobbies
+            gameTableBody.innerHTML = "";
+            lobbyTableBody.innerHTML = "";
+            if (lobbyData && lobbyData.data && lobbyData.data.lobbies) {
+                Object.entries(lobbyData.data.lobbies).forEach(([lobbyId, lobbyInfo]) => {
+                    const usersInfo = Object.values(lobbyInfo.users || {}).map(user => 
+                        `
+                        <div>
+                            <strong>Name:</strong> ${user.name} (ID: ${user.id})<br>
+                            <strong>Auth Type:</strong> ${user.authType}<br>
+                            <strong>IP Address:</strong> ${user.ipAddress}<br>
+                            <strong>Vehicle:</strong> ${user.metadata.vehicle}<br>
+                            <strong>Ready Status:</strong> ${user.metadata.ready}<br>
+                            <strong>Team:</strong> ${user.metadata.team}<br>
+                            <strong>Clients Connected:</strong> ${user.metadata.clientsconnected}<br>
+                            <strong>Is BB:</strong> ${user.isBB}<br>
+                            <strong>Is Admin:</strong> ${user.isAdmin}<br>
+                            <strong>Is Auth:</strong> ${user.isAuth}<br>
+                            <strong>Is Test:</strong> ${user.isTest}
+                        </div>
+                        `
+                    ).join("<br>") || "No users in lobby.";
+
+                    // Parse game information
+                    const gameInfoParsed = parseGameSettings(lobbyInfo.metadata.gameSettings);
+                    const gameInfo = `
+                        <strong>Game Type:</strong> ${lobbyInfo.metadata.gameType}<br>
+                        <strong>User Pack:</strong> ${lobbyInfo.metadata.userPack.trim()}<br>
+                        <strong>Game Version:</strong> ${lobbyInfo.metadata.gameVersion}<br>
+                        <strong>Map File:</strong> ${gameInfoParsed.mapFile}<br>
+                        <strong>CRC32:</strong> ${gameInfoParsed.crc32}<br>
+                        <strong>Mod:</strong> ${gameInfoParsed.mod}<br>
+                        <strong>Lives:</strong> ${gameInfoParsed.attributes.lives}<br>
+                        <strong>Satellite:</strong> ${gameInfoParsed.attributes.satellite ? 'Yes' : 'No'}<br>
+                        <strong>Barracks:</strong> ${gameInfoParsed.attributes.barracks ? 'Yes' : 'No'}<br>
+                        <strong>Sniper:</strong> ${gameInfoParsed.attributes.sniper ? 'Yes' : 'No'}<br>
+                        <strong>Splinter:</strong> ${gameInfoParsed.attributes.splinter ? 'Yes' : 'No'}<br>
+                    `;
+
+                    if (lobbyInfo.isChat) { // Display as lobby
+                        const row = document.createElement("tr");
+                        row.innerHTML = `
+                            <td>${lobbyInfo.metadata.name}</td>
+                            <td>${lobbyInfo.userCount}</td>
+                            <td>${lobbyInfo.memberLimit}</td>
+                            <td>${lobbyInfo.owner}</td>
+                            <td>${lobbyInfo.isPrivate ? 'Yes' : 'No'}</td>
+                            <td>${lobbyInfo.isChat ? 'Yes' : 'No'}</td>
+                            <td>${new Date(lobbyInfo.createdTime).toLocaleString()}</td>
+                            <td class="users">${usersInfo}</td>
+                        `;
+                        lobbyTableBody.appendChild(row);
+                    } else { // Display as game
+                        const row = document.createElement("tr");
+                        row.innerHTML = `
+                            <td>${lobbyInfo.metadata.name}</td>
+                            <td>${lobbyInfo.userCount}</td>
+                            <td>${lobbyInfo.memberLimit}</td>
+                            <td>${lobbyInfo.owner}</td>
+                            <td>${lobbyInfo.isPrivate ? 'Yes' : 'No'}</td>
+                            <td>${new Date(lobbyInfo.createdTime).toLocaleString()}</td>
+                            <td class="game-info">${gameInfo}</td>
+                            <td class="users">${usersInfo}</td>
+                        `;
+                        gameTableBody.appendChild(row);
+                    }
+                });
+            } else {
+                lobbyTableBody.innerHTML = '<tr><td colspan="8">No lobby data available.</td></tr>';
+                gameTableBody.innerHTML = '<tr><td colspan="8">No game data available.</td></tr>';
+            }
+        }
+
+        async function listen() {
+            const websocket = new WebSocket(uri);
+
+            websocket.onopen = () => {
+                const authMessage = {
+                    type: "Authorization",
+                    content: {
+                        authtype: "web",
+                        key: null, // Adjust as needed
+                        id: "0",
+                        apiVer: "0.0"
+                    }
+                };
+                websocket.send(JSON.stringify(authMessage));
+            };
+
+            websocket.onmessage = (event) => {
+                const responseData = JSON.parse(event.data);
+                console.log("Received message:", responseData);
+
+                if (responseData.type === "OnAuthorization" && responseData.data.success) {
+                    const enterLoungeMessage = {
+                        type: "DoEnterLounge",
+                        content: true
+                    };
+                    websocket.send(JSON.stringify(enterLoungeMessage));
+
+                    const lobbyRequest = {
+                        type: "GetLobbyList",
+                        content: {}
+                    };
+                    websocket.send(JSON.stringify(lobbyRequest));
+                }
+
+                if (responseData.type === "OnLobbyListChanged") {
+                    console.log("Lobby list changed:", responseData);
+                    lobbyData = responseData; // Store lobby data
+                    updateHTML(); // Update HTML with lobby data
+                }
+
+                if (responseData.type === "OnWhitelistUpdated") {
+                    console.log("Whitelist updated:", responseData);
+                    whitelistData = responseData; // Store whitelist data
+                    updateHTML(); // Update HTML with whitelist data
+                }
+            };
+
+            websocket.onerror = (error) => {
+                console.error("WebSocket error:", error);
+            };
+
+            websocket.onclose = () => {
+                console.log("WebSocket connection closed.");
+            };
+        }
+
+        // Start listening for WebSocket messages
+        listen();
+    </script>
+</body>
+</html>
